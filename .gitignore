@@ -1,0 +1,8 @@
+local.properties
+build/
+app/build/
+.gradle/
+tools/out/
+*.jks
+keystore.properties
+VoiceTunes-*.apk
