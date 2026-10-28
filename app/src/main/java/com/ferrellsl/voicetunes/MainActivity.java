@@ -154,51 +154,56 @@ public final class MainActivity extends Activity {
         status = text("", 14, Color.rgb(150, 160, 170));
         root.addView(status);
 
-        mic = new Button(this) {
-            @Override protected void onMeasure(int w, int h) {      // a round button as big as fits
+        // what's playing: its picture (the one in the file, if it has one), square and as big as
+        // fits; tapping it plays or pauses
+        art = new ImageView(this) {
+            @Override protected void onMeasure(int w, int h) {
                 int size = Math.min(MeasureSpec.getSize(w), MeasureSpec.getSize(h));
                 int s = MeasureSpec.makeMeasureSpec(size, MeasureSpec.EXACTLY);
                 super.onMeasure(s, s);
             }
         };
-        mic.setAllCaps(false);
-        mic.setTextColor(Color.WHITE);
-        mic.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
-        setMicIdle();
-        mic.setOnClickListener(v -> onMic());
-        LinearLayout middle = new LinearLayout(this);
-        middle.setGravity(Gravity.CENTER);
-        middle.addView(mic, new LinearLayout.LayoutParams(-1, -1));
-        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1, 0, 1);
-        mp.setMargins(0, dp(12), 0, dp(12));
-        root.addView(middle, mp);
-
-        heard = text("", 18, Color.rgb(255, 213, 79));
-        heard.setGravity(Gravity.CENTER);
-        root.addView(heard);
-        // what's playing: its picture (the one in the file, if it has one), title and artist
-        LinearLayout now = new LinearLayout(this);
-        now.setGravity(Gravity.CENTER_VERTICAL);
-        now.setPadding(0, dp(12), 0, 0);
-        art = new ImageView(this);
         art.setScaleType(ImageView.ScaleType.CENTER_CROP);
         art.setClipToOutline(true);
         GradientDrawable frame = new GradientDrawable();
-        frame.setCornerRadius(dp(8));
+        frame.setCornerRadius(dp(12));
         frame.setColor(Color.rgb(40, 46, 52));
         art.setBackground(frame);
-        art.setVisibility(View.GONE);
-        now.addView(art, new LinearLayout.LayoutParams(dp(120), dp(120)));
-        LinearLayout words = new LinearLayout(this);
-        words.setOrientation(LinearLayout.VERTICAL);
-        words.setPadding(dp(14), 0, 0, 0);
+        art.setImageResource(R.drawable.ic_launcher);
+        art.setOnClickListener(v -> {
+            if (player == null) return;
+            if (player.isPlaying()) player.pause(); else player.play();
+        });
+        LinearLayout middle = new LinearLayout(this);
+        middle.setGravity(Gravity.CENTER);
+        middle.addView(art, new LinearLayout.LayoutParams(-1, -1));
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1, 0, 1);
+        mp.setMargins(0, dp(10), 0, dp(10));
+        root.addView(middle, mp);
+
         nowTitle = text("", 22, Color.WHITE);
         nowTitle.setTypeface(Typeface.DEFAULT_BOLD);
-        words.addView(nowTitle);
+        nowTitle.setGravity(Gravity.CENTER);
+        nowTitle.setSingleLine();
+        nowTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        root.addView(nowTitle);
         nowArtist = text("", 17, Color.rgb(180, 190, 200));
-        words.addView(nowArtist);
-        now.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-        root.addView(now);
+        nowArtist.setGravity(Gravity.CENTER);
+        nowArtist.setSingleLine();
+        nowArtist.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        root.addView(nowArtist);
+        heard = text("", 16, Color.rgb(255, 213, 79));
+        heard.setGravity(Gravity.CENTER);
+        heard.setPadding(0, dp(6), 0, 0);
+        root.addView(heard);
+
+        mic = new Button(this);
+        mic.setAllCaps(false);
+        mic.setTextColor(Color.WHITE);
+        mic.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
+        mic.setPadding(0, 0, 0, 0);
+        setMicIdle();
+        mic.setOnClickListener(v -> onMic());
 
         LinearLayout controls = new LinearLayout(this);
         controls.setGravity(Gravity.CENTER);
@@ -216,16 +221,21 @@ public final class MainActivity extends Activity {
             controls.addView(b, new LinearLayout.LayoutParams(0, dp(72), 1));
         }
         root.addView(controls);
+        // the microphone, round, centered below
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(96), dp(96));
+        lp.gravity = Gravity.CENTER_HORIZONTAL;
+        lp.setMargins(0, dp(4), 0, dp(4));
+        root.addView(mic, lp);
         setContentView(root);
     }
 
     private void setMicIdle() {
-        mic.setText("🎤\nTap and say\nwhat to play");
+        mic.setText("🎤");
         mic.setBackground(circle(Color.rgb(30, 136, 229)));
     }
 
     private void setMicListening() {
-        mic.setText("🎤\nListening…");
+        mic.setText("…");
         mic.setBackground(circle(Color.rgb(229, 57, 53)));
     }
 
@@ -242,7 +252,7 @@ public final class MainActivity extends Activity {
 
     /** The picture for what's playing, fetched from the server once per song. */
     private void showArt(Uri uri) {
-        if (uri == null) { artShown = null; art.setVisibility(View.GONE); return; }
+        if (uri == null) { artShown = null; art.setImageResource(R.drawable.ic_launcher); return; }
         if (uri.equals(artShown)) return;
         artShown = uri;
         images.execute(() -> {
@@ -262,9 +272,8 @@ public final class MainActivity extends Activity {
             android.graphics.Bitmap got = b;
             main.post(() -> {
                 if (!uri.equals(artShown)) return;              // (another song by now)
-                if (got == null) { art.setVisibility(View.GONE); return; }
-                art.setImageBitmap(got);
-                art.setVisibility(View.VISIBLE);
+                if (got == null) art.setImageResource(R.drawable.ic_launcher);
+                else art.setImageBitmap(got);
             });
         });
     }
