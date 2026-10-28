@@ -134,12 +134,15 @@ public final class MainActivity extends Activity {
 
     // ------------------------------------------------------------------ the screen
 
+    /** Builds the screen for the current orientation: in portrait the picture in the middle
+     *  with everything else above and below it, in landscape the picture on the left and the
+     *  rest in a column beside it. Rebuilt on rotation (the app isn't restarted for it). */
     private void buildScreen() {
-        int pad = dp(16);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(16, 20, 24));
-        root.setPadding(pad, pad, pad, pad);
+        boolean landscape = getResources().getConfiguration().orientation
+            == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+        CharSequence oldStatus = status == null ? "" : status.getText();
+        CharSequence oldHeard = heard == null ? "" : heard.getText();
+        int pad = dp(landscape ? 12 : 16);
 
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
@@ -149,10 +152,9 @@ public final class MainActivity extends Activity {
         Button settings = flat("⚙");
         settings.setOnClickListener(v -> showSettings());
         top.addView(settings);
-        root.addView(top);
 
         status = text("", 14, Color.rgb(150, 160, 170));
-        root.addView(status);
+        status.setText(oldStatus);
 
         // what's playing: its picture (the one in the file, if it has one), square and as big as
         // fits; tapping it plays or pauses
@@ -169,45 +171,32 @@ public final class MainActivity extends Activity {
         frame.setCornerRadius(dp(12));
         frame.setColor(Color.rgb(40, 46, 52));
         art.setBackground(frame);
-        art.setImageResource(R.drawable.ic_launcher);
+        if (artBitmap != null) art.setImageBitmap(artBitmap); else art.setImageResource(R.drawable.ic_launcher);
         art.setOnClickListener(v -> {
             if (player == null) return;
             if (player.isPlaying()) player.pause(); else player.play();
         });
-        LinearLayout middle = new LinearLayout(this);
-        middle.setGravity(Gravity.CENTER);
-        middle.addView(art, new LinearLayout.LayoutParams(-1, -1));
-        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1, 0, 1);
-        mp.setMargins(0, dp(10), 0, dp(10));
-        root.addView(middle, mp);
+        LinearLayout artBox = new LinearLayout(this);
+        artBox.setGravity(Gravity.CENTER);
+        artBox.addView(art, new LinearLayout.LayoutParams(-1, -1));
 
         nowTitle = text("", 22, Color.WHITE);
         nowTitle.setTypeface(Typeface.DEFAULT_BOLD);
         nowTitle.setGravity(Gravity.CENTER);
         nowTitle.setSingleLine();
         nowTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        root.addView(nowTitle);
         nowArtist = text("", 17, Color.rgb(180, 190, 200));
         nowArtist.setGravity(Gravity.CENTER);
         nowArtist.setSingleLine();
         nowArtist.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        root.addView(nowArtist);
         heard = text("", 16, Color.rgb(255, 213, 79));
         heard.setGravity(Gravity.CENTER);
         heard.setPadding(0, dp(6), 0, 0);
-        root.addView(heard);
-
-        mic = new Button(this);
-        mic.setAllCaps(false);
-        mic.setTextColor(Color.WHITE);
-        mic.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
-        mic.setPadding(0, 0, 0, 0);
-        setMicIdle();
-        mic.setOnClickListener(v -> onMic());
+        heard.setText(oldHeard);
 
         LinearLayout controls = new LinearLayout(this);
         controls.setGravity(Gravity.CENTER);
-        controls.setPadding(0, dp(12), 0, 0);
+        controls.setPadding(0, dp(landscape ? 4 : 12), 0, 0);
         Button prev = flat("⏮"), next = flat("⏭");
         playPause = flat("▶");
         prev.setOnClickListener(v -> { if (player != null) player.seekToPrevious(); });
@@ -218,15 +207,61 @@ public final class MainActivity extends Activity {
         next.setOnClickListener(v -> { if (player != null) player.seekToNextMediaItem(); });
         for (Button b : new Button[] { prev, playPause, next }) {
             b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
-            controls.addView(b, new LinearLayout.LayoutParams(0, dp(72), 1));
+            controls.addView(b, new LinearLayout.LayoutParams(0, dp(64), 1));
         }
-        root.addView(controls);
-        // the microphone, round, centered below
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(96), dp(96));
-        lp.gravity = Gravity.CENTER_HORIZONTAL;
-        lp.setMargins(0, dp(4), 0, dp(4));
-        root.addView(mic, lp);
+
+        // the microphone: small and round, centered below the controls
+        mic = new Button(this);
+        mic.setAllCaps(false);
+        mic.setTextColor(Color.WHITE);
+        mic.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        mic.setPadding(0, 0, 0, 0);
+        if (listening) setMicListening(); else setMicIdle();
+        mic.setOnClickListener(v -> onMic());
+        LinearLayout.LayoutParams micAt = new LinearLayout.LayoutParams(dp(56), dp(56));
+        micAt.gravity = Gravity.CENTER_HORIZONTAL;
+        micAt.setMargins(0, dp(4), 0, dp(4));
+
+        LinearLayout root = new LinearLayout(this);
+        root.setBackgroundColor(Color.rgb(16, 20, 24));
+        root.setPadding(pad, pad, pad, pad);
+        if (landscape) {
+            root.setOrientation(LinearLayout.HORIZONTAL);
+            root.addView(artBox, new LinearLayout.LayoutParams(-2, -1));
+            LinearLayout side = new LinearLayout(this);
+            side.setOrientation(LinearLayout.VERTICAL);
+            side.setPadding(pad, 0, 0, 0);
+            side.addView(top);
+            side.addView(status);
+            side.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1));
+            side.addView(nowTitle);
+            side.addView(nowArtist);
+            side.addView(heard);
+            side.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1));
+            side.addView(controls);
+            side.addView(mic, micAt);
+            root.addView(side, new LinearLayout.LayoutParams(0, -1, 1));
+        } else {
+            root.setOrientation(LinearLayout.VERTICAL);
+            root.addView(top);
+            root.addView(status);
+            LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1, 0, 1);
+            mp.setMargins(0, dp(10), 0, dp(10));
+            root.addView(artBox, mp);
+            root.addView(nowTitle);
+            root.addView(nowArtist);
+            root.addView(heard);
+            root.addView(controls);
+            root.addView(mic, micAt);
+        }
         setContentView(root);
+    }
+
+    @Override
+    public void onConfigurationChanged(android.content.res.Configuration c) {
+        super.onConfigurationChanged(c);
+        buildScreen();
+        showNowPlaying();
     }
 
     private void setMicIdle() {
@@ -249,10 +284,11 @@ public final class MainActivity extends Activity {
     }
 
     private Uri artShown;
+    private android.graphics.Bitmap artBitmap;    // (kept for when the screen is rebuilt)
 
     /** The picture for what's playing, fetched from the server once per song. */
     private void showArt(Uri uri) {
-        if (uri == null) { artShown = null; art.setImageResource(R.drawable.ic_launcher); return; }
+        if (uri == null) { artShown = null; artBitmap = null; art.setImageResource(R.drawable.ic_launcher); return; }
         if (uri.equals(artShown)) return;
         artShown = uri;
         images.execute(() -> {
@@ -272,6 +308,7 @@ public final class MainActivity extends Activity {
             android.graphics.Bitmap got = b;
             main.post(() -> {
                 if (!uri.equals(artShown)) return;              // (another song by now)
+                artBitmap = got;
                 if (got == null) art.setImageResource(R.drawable.ic_launcher);
                 else art.setImageBitmap(got);
             });
