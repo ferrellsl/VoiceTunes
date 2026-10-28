@@ -24,9 +24,14 @@ public final class Matcher {
 
     public static final class Song {
         public final String id, title, artist, album, albumId;
+        public final String coverArt;        // the server's artwork id for this song (its own picture first)
         final String nTitle, nArtist;
         public Song(String id, String title, String artist, String album, String albumId) {
+            this(id, title, artist, album, albumId, id);
+        }
+        public Song(String id, String title, String artist, String album, String albumId, String coverArt) {
             this.id = id; this.title = title; this.artist = artist; this.album = album; this.albumId = albumId;
+            this.coverArt = coverArt == null || coverArt.isEmpty() ? id : coverArt;
             nTitle = normalize(stripExtras(title));
             nArtist = normalize(artist);
         }

@@ -29,6 +29,7 @@ import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -60,6 +61,7 @@ public final class MainActivity extends Activity {
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService work = Executors.newSingleThreadExecutor();
+    private final ExecutorService images = Executors.newSingleThreadExecutor();
 
     private SharedPreferences prefs;
     private Subsonic server;
@@ -72,6 +74,7 @@ public final class MainActivity extends Activity {
 
     private Button mic, playPause;
     private TextView status, heard, nowTitle, nowArtist;
+    private ImageView art;
 
     // ------------------------------------------------------------------ life cycle
 
@@ -125,6 +128,7 @@ public final class MainActivity extends Activity {
         if (recognizer != null) recognizer.destroy();
         tts.shutdown();
         work.shutdownNow();
+        images.shutdownNow();
         super.onDestroy();
     }
 
@@ -172,14 +176,29 @@ public final class MainActivity extends Activity {
         heard = text("", 18, Color.rgb(255, 213, 79));
         heard.setGravity(Gravity.CENTER);
         root.addView(heard);
+        // what's playing: its picture (the one in the file, if it has one), title and artist
+        LinearLayout now = new LinearLayout(this);
+        now.setGravity(Gravity.CENTER_VERTICAL);
+        now.setPadding(0, dp(12), 0, 0);
+        art = new ImageView(this);
+        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        art.setClipToOutline(true);
+        GradientDrawable frame = new GradientDrawable();
+        frame.setCornerRadius(dp(8));
+        frame.setColor(Color.rgb(40, 46, 52));
+        art.setBackground(frame);
+        art.setVisibility(View.GONE);
+        now.addView(art, new LinearLayout.LayoutParams(dp(120), dp(120)));
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPadding(dp(14), 0, 0, 0);
         nowTitle = text("", 22, Color.WHITE);
         nowTitle.setTypeface(Typeface.DEFAULT_BOLD);
-        nowTitle.setGravity(Gravity.CENTER);
-        nowTitle.setPadding(0, dp(10), 0, 0);
-        root.addView(nowTitle);
+        words.addView(nowTitle);
         nowArtist = text("", 17, Color.rgb(180, 190, 200));
-        nowArtist.setGravity(Gravity.CENTER);
-        root.addView(nowArtist);
+        words.addView(nowArtist);
+        now.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(now);
 
         LinearLayout controls = new LinearLayout(this);
         controls.setGravity(Gravity.CENTER);
@@ -216,6 +235,38 @@ public final class MainActivity extends Activity {
         nowTitle.setText(m.title == null ? "" : m.title);
         nowArtist.setText(m.artist == null ? "" : m.artist);
         playPause.setText(player.isPlaying() ? "⏸" : "▶");
+        showArt(m.artworkUri);
+    }
+
+    private Uri artShown;
+
+    /** The picture for what's playing, fetched from the server once per song. */
+    private void showArt(Uri uri) {
+        if (uri == null) { artShown = null; art.setVisibility(View.GONE); return; }
+        if (uri.equals(artShown)) return;
+        artShown = uri;
+        images.execute(() -> {
+            android.graphics.Bitmap b = null;
+            try {
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(uri.toString()).openConnection();
+                c.setConnectTimeout(8000);
+                c.setReadTimeout(15000);
+                try (java.io.InputStream in = c.getInputStream()) {
+                    b = android.graphics.BitmapFactory.decodeStream(in);
+                } finally {
+                    c.disconnect();
+                }
+            } catch (Exception ignored) {
+                // (no picture, then)
+            }
+            android.graphics.Bitmap got = b;
+            main.post(() -> {
+                if (!uri.equals(artShown)) return;              // (another song by now)
+                if (got == null) { art.setVisibility(View.GONE); return; }
+                art.setImageBitmap(got);
+                art.setVisibility(View.VISIBLE);
+            });
+        });
     }
 
     // ------------------------------------------------------------------ listening
@@ -373,7 +424,7 @@ public final class MainActivity extends Activity {
                 .setUri(server.streamUrl(s.id, rate))
                 .setMediaMetadata(new MediaMetadata.Builder()
                     .setTitle(s.title).setArtist(s.artist).setAlbumTitle(s.album)
-                    .setArtworkUri(Uri.parse(server.coverUrl(s.id))).build())
+                    .setArtworkUri(Uri.parse(server.coverUrl(s.coverArt))).build())
                 .build());
         }
         player.setShuffleModeEnabled(false);

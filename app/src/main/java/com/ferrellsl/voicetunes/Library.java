@@ -31,7 +31,11 @@ public final class Library {
         matcher = new Matcher(songs, albums, artists, playlists);
     }
 
-    public boolean stale() { return System.currentTimeMillis() - fetched > 24L * 3600 * 1000; }
+    /** (2: songs carry their artwork id) */
+    private static final int VERSION = 2;
+    private int version = VERSION;
+
+    public boolean stale() { return version < VERSION || System.currentTimeMillis() - fetched > 24L * 3600 * 1000; }
 
     public String summary() {
         return String.format(java.util.Locale.US, "%,d songs, %,d albums, %,d artists, %d playlists",
@@ -61,8 +65,9 @@ public final class Library {
         try {
             JSONObject o = new JSONObject();
             o.put("fetched", fetched);
+            o.put("version", VERSION);
             JSONArray s = new JSONArray();
-            for (Matcher.Song x : songs) s.put(new JSONArray().put(x.id).put(x.title).put(x.artist).put(x.album).put(x.albumId));
+            for (Matcher.Song x : songs) s.put(new JSONArray().put(x.id).put(x.title).put(x.artist).put(x.album).put(x.albumId).put(x.coverArt));
             o.put("songs", s);
             o.put("albums", items(albums));
             o.put("artists", items(artists));
@@ -84,11 +89,14 @@ public final class Library {
             List<Matcher.Song> songs = new ArrayList<>(s.length());
             for (int i = 0; i < s.length(); i++) {
                 JSONArray x = s.getJSONArray(i);
-                songs.add(new Matcher.Song(x.getString(0), x.getString(1), x.getString(2), x.getString(3), x.getString(4)));
+                songs.add(new Matcher.Song(x.getString(0), x.getString(1), x.getString(2), x.getString(3), x.getString(4),
+                    x.optString(5, "")));
             }
-            return new Library(songs, items(o.getJSONArray("albums"), Matcher.Kind.ALBUM),
+            Library lib = new Library(songs, items(o.getJSONArray("albums"), Matcher.Kind.ALBUM),
                 items(o.getJSONArray("artists"), Matcher.Kind.ARTIST),
                 items(o.getJSONArray("playlists"), Matcher.Kind.PLAYLIST), o.getLong("fetched"));
+            lib.version = o.optInt("version", 1);
+            return lib;
         } catch (Exception e) {
             return null;
         }

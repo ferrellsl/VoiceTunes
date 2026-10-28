@@ -119,7 +119,7 @@ public final class Subsonic {
 
     private static Matcher.Song song(JSONObject s) {
         return new Matcher.Song(s.optString("id"), s.optString("title"), s.optString("artist"),
-            s.optString("album"), s.optString("albumId"));
+            s.optString("album"), s.optString("albumId"), s.optString("coverArt"));
     }
 
     private static List<Matcher.Song> songs(JSONArray a) {
