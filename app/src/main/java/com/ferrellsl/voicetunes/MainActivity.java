@@ -57,22 +57,19 @@ import java.util.concurrent.Executors;
  */
 public final class MainActivity extends Activity {
 
-    private static final String DEFAULT_SERVER = "http://192.168.2.166:4533";
-
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService work = Executors.newSingleThreadExecutor();
     private final ExecutorService images = Executors.newSingleThreadExecutor();
 
     private SharedPreferences prefs;
-    private Subsonic server;
-    private volatile Library library;
+    private Music music;
     private MediaController player;
     private ListenableFuture<MediaController> playerFuture;
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
     private boolean ttsReady, listening, resumeAfter;
 
-    private Button mic, playPause;
+    private Button mic, playPause, shuffle;
     private TextView status, heard, nowTitle, nowArtist;
     private ImageView art;
 
@@ -81,15 +78,15 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        prefs = getSharedPreferences("voicetunes", MODE_PRIVATE);
+        music = Music.get(this);
+        prefs = music.prefs;
         buildScreen();
         if (prefs.getBoolean("screenOn", true)) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         tts = new TextToSpeech(this, s -> ttsReady = s == TextToSpeech.SUCCESS);
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 2);
         }
-        makeServer();
-        if (server == null) {
+        if (music.server == null) {
             status.setText("Set up your Navidrome server to start.");
             main.post(this::showSettings);
         } else {
@@ -205,7 +202,14 @@ public final class MainActivity extends Activity {
             if (player.isPlaying()) player.pause(); else player.play();
         });
         next.setOnClickListener(v -> { if (player != null) player.seekToNextMediaItem(); });
-        for (Button b : new Button[] { prev, playPause, next }) {
+        // shuffle what's playing (from the song now playing on), or back to its own order
+        shuffle = flat("🔀");
+        shuffle.setOnClickListener(v -> {
+            if (player == null) return;
+            player.setShuffleModeEnabled(!player.getShuffleModeEnabled());
+            say(player.getShuffleModeEnabled() ? "Shuffle on." : "Shuffle off.");
+        });
+        for (Button b : new Button[] { prev, playPause, next, shuffle }) {
             b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
             controls.addView(b, new LinearLayout.LayoutParams(0, dp(64), 1));
         }
@@ -280,6 +284,7 @@ public final class MainActivity extends Activity {
         nowTitle.setText(m.title == null ? "" : m.title);
         nowArtist.setText(m.artist == null ? "" : m.artist);
         playPause.setText(player.isPlaying() ? "⏸" : "▶");
+        shuffle.setAlpha(player.getShuffleModeEnabled() ? 1f : 0.35f);
         showArt(m.artworkUri);
     }
 
@@ -327,7 +332,7 @@ public final class MainActivity extends Activity {
             say("This phone has no speech recognizer. Install or enable the Google app.");
             return;
         }
-        if (library == null) {
+        if (music.library == null) {
             say("The library isn't loaded yet.");
             return;
         }
@@ -396,7 +401,7 @@ public final class MainActivity extends Activity {
      *  something in the library best wins. */
     private void act(List<String> alternatives) {
         heard.setText("“" + alternatives.get(0) + "”");
-        Library lib = library;
+        Library lib = music.library;
         Matcher.Request bestRequest = null;
         Matcher.Result best = null;
         for (String a : alternatives) {
@@ -418,11 +423,11 @@ public final class MainActivity extends Activity {
         heard.setText("“" + alternatives.get(0) + "” → " + found.describe());
         work.execute(() -> {
             try {
-                List<Matcher.Song> queue = queueFor(found);
+                List<Matcher.Song> queue = music.queueFor(found);
                 main.post(() -> {
                     if (queue.isEmpty()) { speakThen("There's nothing in " + found.describe() + ".", null); return; }
                     String what = found.kind == Matcher.Kind.SONG ? found.describe()
-                        : found.describe() + (found.shuffle || found.kind == Matcher.Kind.ARTIST ? ", shuffled" : "");
+                        : found.describe() + (music.shuffled(found) ? ", shuffled" : "");
                     speakThen("Playing " + what + ".", () -> play(queue));
                 });
             } catch (Exception e) {
@@ -431,48 +436,9 @@ public final class MainActivity extends Activity {
         });
     }
 
-    /** The songs to play for what was found. A song is followed by the rest of its album. */
-    private List<Matcher.Song> queueFor(Matcher.Result f) throws Exception {
-        List<Matcher.Song> q;
-        switch (f.kind) {
-            case PLAYLIST:
-                q = server.playlistSongs(f.item.id);
-                break;
-            case ALBUM:
-                q = server.albumSongs(f.item.id);
-                break;
-            case ARTIST:
-                return library.songsBy(f.item.name);
-            default:
-                q = new ArrayList<>();
-                q.add(f.song);
-                try {
-                    List<Matcher.Song> album = server.albumSongs(f.song.albumId);
-                    int at = -1;
-                    for (int i = 0; i < album.size(); i++) if (album.get(i).id.equals(f.song.id)) at = i;
-                    if (at >= 0) q.addAll(album.subList(at + 1, album.size()));
-                } catch (Exception ignored) {
-                    // (just the song, then)
-                }
-                return q;
-        }
-        if (f.shuffle) Collections.shuffle(q);
-        return q;
-    }
-
     private void play(List<Matcher.Song> songs) {
         if (player == null) return;
-        int rate = prefs.getInt("bitrate", 0);
-        List<MediaItem> items = new ArrayList<>(songs.size());
-        for (Matcher.Song s : songs) {
-            items.add(new MediaItem.Builder()
-                .setMediaId(s.id)
-                .setUri(server.streamUrl(s.id, rate))
-                .setMediaMetadata(new MediaMetadata.Builder()
-                    .setTitle(s.title).setArtist(s.artist).setAlbumTitle(s.album)
-                    .setArtworkUri(Uri.parse(server.coverUrl(s.coverArt))).build())
-                .build());
-        }
+        List<MediaItem> items = music.playable(songs);
         player.setShuffleModeEnabled(false);
         player.setMediaItems(items, 0, 0);
         player.prepare();
@@ -518,38 +484,30 @@ public final class MainActivity extends Activity {
 
     // ------------------------------------------------------------------ server and library
 
-    private void makeServer() {
-        String token = prefs.getString("token", "");
-        server = token.isEmpty() ? null : new Subsonic(prefs.getString("server", DEFAULT_SERVER),
-            prefs.getString("user", ""), token, prefs.getString("salt", ""));
-    }
-
-    private File libraryFile() { return new File(getFilesDir(), "library.json"); }
-
     /** The library from the phone's copy, fetched from the server when there's none, it's a
      *  day old, or `fresh` is asked for. */
     private void loadLibrary(boolean fresh) {
-        if (server == null) return;
-        Subsonic s = server;
+        if (music.server == null) return;
+        Subsonic s = music.server;
         status.setText(fresh ? "Getting the library from the server…" : "Loading the library…");
         work.execute(() -> {
-            Library lib = fresh ? null : Library.load(libraryFile());
+            Library lib = fresh ? null : Library.load(music.libraryFile);
             if (lib != null) {
                 Library ready = lib;
-                main.post(() -> { library = ready; status.setText(ready.summary()); });
+                main.post(() -> { music.library = ready; status.setText(ready.summary()); });
                 if (!lib.stale()) return;
             }
             try {
                 if (lib == null) main.post(() -> status.setText("Getting the library from the server (the first time takes a minute)…"));
                 Library got = Library.fetch(s);
-                got.save(libraryFile());
+                got.save(music.libraryFile);
                 main.post(() -> {
-                    library = got;
+                    music.library = got;
                     status.setText(got.summary());
                     if (fresh) say("The library is up to date.");
                 });
             } catch (Exception e) {
-                main.post(() -> status.setText((library == null ? "Can't get the library: " : "Using the saved library; the server said: ") + e.getMessage()));
+                main.post(() -> status.setText((music.library == null ? "Can't get the library: " : "Using the saved library; the server said: ") + e.getMessage()));
             }
         });
     }
@@ -558,12 +516,16 @@ public final class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(8), dp(20), 0);
-        EditText url = field(box, "Navidrome address", prefs.getString("server", DEFAULT_SERVER), InputType.TYPE_TEXT_VARIATION_URI);
+        EditText url = field(box, "Navidrome address", prefs.getString("server", Music.DEFAULT_SERVER), InputType.TYPE_TEXT_VARIATION_URI);
         EditText user = field(box, "User name", prefs.getString("user", ""), InputType.TYPE_CLASS_TEXT);
         EditText pass = field(box, prefs.getString("token", "").isEmpty() ? "Password" : "Password (leave empty to keep)", "",
             InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         EditText rate = field(box, "Highest bit rate in kbps, for mobile data (0 = as stored)",
             Integer.toString(prefs.getInt("bitrate", 0)), InputType.TYPE_CLASS_NUMBER);
+        CheckBox shufflePl = new CheckBox(this);
+        shufflePl.setText("Shuffle playlists (start anywhere, random order)");
+        shufflePl.setChecked(music.shufflePlaylists());
+        box.addView(shufflePl);
         CheckBox speak = new CheckBox(this);
         speak.setText("Say what's going to play");
         speak.setChecked(prefs.getBoolean("speak", true));
@@ -596,15 +558,16 @@ public final class MainActivity extends Activity {
             }
             try { e.putInt("bitrate", Integer.parseInt(rate.getText().toString().trim())); } catch (NumberFormatException ignored) {}
             e.putBoolean("speak", speak.isChecked());
+            e.putBoolean("shufflePlaylists", shufflePl.isChecked());
             e.putBoolean("screenOn", screen.isChecked());
             e.apply();
             if (screen.isChecked()) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            makeServer();
-            if (server == null) { status.setText("Enter your user name and password."); return; }
+            music.reloadServer();
+            if (music.server == null) { status.setText("Enter your user name and password."); return; }
             d.dismiss();
             if (serverChanged) {
-                Subsonic s = server;
+                Subsonic s = music.server;
                 status.setText("Connecting…");
                 work.execute(() -> {
                     try {
