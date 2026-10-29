@@ -15,9 +15,12 @@ import androidx.media3.datasource.ResolvingDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.session.CacheBitmapLoader;
+import androidx.media3.session.CommandButton;
 import androidx.media3.session.LibraryResult;
 import androidx.media3.session.MediaLibraryService;
 import androidx.media3.session.MediaSession;
+import androidx.media3.session.SessionCommand;
+import androidx.media3.session.SessionResult;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.Futures;
@@ -64,8 +67,18 @@ public final class PlaybackService extends MediaLibraryService {
             .build();
         session = new MediaLibrarySession.Builder(this, player, new Library())
             .setBitmapLoader(new CacheBitmapLoader(new DataSourceBitmapLoader(work, net)))
+            .setCustomLayout(ImmutableList.of(new CommandButton.Builder()
+                .setDisplayName("Speak")
+                .setIconResId(R.drawable.ic_mic)
+                .setSessionCommand(LISTEN)
+                .build()))
             .build();
+        voice = new CarVoice(this, music, player, work);
     }
+
+    /** VoiceTunes' own microphone button, beside play/pause on Android Auto's playing screen. */
+    private static final SessionCommand LISTEN = new SessionCommand("com.ferrellsl.voicetunes.LISTEN", Bundle.EMPTY);
+    private CarVoice voice;
 
     @Override
     public MediaLibrarySession onGetSession(MediaSession.ControllerInfo controllerInfo) {
@@ -81,6 +94,7 @@ public final class PlaybackService extends MediaLibraryService {
 
     @Override
     public void onDestroy() {
+        voice.release();
         session.getPlayer().release();
         session.release();
         session = null;
@@ -91,6 +105,24 @@ public final class PlaybackService extends MediaLibraryService {
     // ------------------------------------------------------------------ what Android Auto sees
 
     private final class Library implements MediaLibrarySession.Callback {
+
+        @Override
+        public MediaSession.ConnectionResult onConnect(MediaSession s, MediaSession.ControllerInfo controller) {
+            return new MediaSession.ConnectionResult.AcceptedResultBuilder(s)
+                .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+                    .buildUpon().add(LISTEN).build())
+                .build();
+        }
+
+        @Override
+        public ListenableFuture<SessionResult> onCustomCommand(
+                MediaSession s, MediaSession.ControllerInfo controller, SessionCommand command, Bundle args) {
+            if (LISTEN.customAction.equals(command.customAction)) {
+                voice.listen();
+                return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_SUCCESS));
+            }
+            return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED));
+        }
 
         @Override
         public ListenableFuture<LibraryResult<MediaItem>> onGetLibraryRoot(
