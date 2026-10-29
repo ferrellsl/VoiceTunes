@@ -2,6 +2,8 @@ package com.ferrellsl.voicetunes;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.Uri;
 
 import androidx.media3.common.MediaItem;
@@ -14,6 +16,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * What the phone screen and the player service (and through it Android Auto) share: the
@@ -21,7 +25,6 @@ import java.util.Map;
  */
 public final class Music {
 
-    public static final String DEFAULT_SERVER = "http://192.168.2.166:4533";
 
     private static Music instance;
 
@@ -41,12 +44,33 @@ public final class Music {
         prefs = c.getSharedPreferences("voicetunes", Context.MODE_PRIVATE);
         libraryFile = new File(c.getFilesDir(), "library.json");
         reloadServer();
+        // on another network (home Wi-Fi, a car's hotspot, mobile data): find which address answers
+        ConnectivityManager cm = c.getSystemService(ConnectivityManager.class);
+        if (cm != null) cm.registerDefaultNetworkCallback(new ConnectivityManager.NetworkCallback() {
+            @Override public void onAvailable(Network n) { chooseAddress(); }
+        });
     }
 
+    private final ExecutorService probe = Executors.newSingleThreadExecutor();
+
     public void reloadServer() {
+        Trust.install(prefs);
         String token = prefs.getString("token", "");
-        server = token.isEmpty() ? null : new Subsonic(prefs.getString("server", DEFAULT_SERVER),
-            prefs.getString("user", ""), token, prefs.getString("salt", ""));
+        String home = prefs.getString("server", "");
+        server = token.isEmpty() || home.isEmpty() ? null : new Subsonic(home,
+            prefs.getString("away", ""), prefs.getString("user", ""), token, prefs.getString("salt", ""));
+        chooseAddress();
+    }
+
+    private void chooseAddress() {
+        Subsonic s = server;
+        if (s != null) probe.execute(s::choose);
+    }
+
+    /** A song or picture address pointed at the server address that answers now. */
+    public Uri resolve(Uri uri) {
+        Subsonic s = server;
+        return s == null || uri == null ? uri : Uri.parse(s.resolve(uri.toString()));
     }
 
     /** The library, from the phone's copy if it isn't loaded yet (off the main thread). */

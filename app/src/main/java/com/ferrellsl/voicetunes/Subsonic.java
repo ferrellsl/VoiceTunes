@@ -20,6 +20,11 @@ import java.util.List;
  * The few calls of the Subsonic API (as Navidrome serves it) the app needs. Logins use the API's
  * token form: md5(password + salt) with a random salt, worked out once when the settings are
  * saved, so the password itself is never stored or sent.
+ *
+ * There can be two addresses for the one server: the home one, and an "away" one (HTTPS through
+ * the router) for when the phone isn't on the home network. Calls use whichever answered last
+ * and try the other when it doesn't answer; song and picture addresses are rewritten to it when
+ * they're fetched (resolve), so a queue made at home keeps playing on the road.
  */
 public final class Subsonic {
 
@@ -27,13 +32,48 @@ public final class Subsonic {
         public ServerError(String message) { super(message); }
     }
 
-    private final String base, user, token, salt;
+    private final String home, away, user, token, salt;
+    private volatile String base;
 
-    public Subsonic(String server, String user, String token, String salt) {
+    /** away: null or empty when there's only the home address. */
+    public Subsonic(String server, String away, String user, String token, String salt) {
+        this.home = address(server);
+        this.away = away == null || away.trim().isEmpty() ? null : address(away);
+        this.base = home; this.user = user.trim(); this.token = token; this.salt = salt;
+    }
+
+    private static String address(String server) {
         String b = server.trim();
         if (!b.startsWith("http://") && !b.startsWith("https://")) b = "http://" + b;
         while (b.endsWith("/")) b = b.substring(0, b.length() - 1);
-        this.base = b; this.user = user.trim(); this.token = token; this.salt = salt;
+        return b;
+    }
+
+    /** The address in use now. */
+    public String base() { return base; }
+
+    /** A song or picture address made with either address, pointed at the one in use now. */
+    public String resolve(String url) {
+        String now = base;
+        if (away != null && !now.equals(away) && url.startsWith(away + "/")) return now + url.substring(away.length());
+        if (!now.equals(home) && url.startsWith(home + "/")) return now + url.substring(home.length());
+        return url;
+    }
+
+    /** Works out which address answers (after the phone changes networks); off the main thread. */
+    public void choose() {
+        if (away == null) return;
+        if (answers(home)) base = home;
+        else if (answers(away)) base = away;
+    }
+
+    private boolean answers(String b) {
+        try {
+            open(b, "ping", "", 2500).disconnect();
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     /** A new salt and the token for a password. */
@@ -143,10 +183,16 @@ public final class Subsonic {
     }
 
     private JSONObject call(String method, String params) throws IOException {
-        URL url = new URL(base + "/rest/" + method + ".view?" + auth() + "&f=json" + params);
-        HttpURLConnection c = (HttpURLConnection) url.openConnection();
-        c.setConnectTimeout(8000);
-        c.setReadTimeout(60000);
+        String now = base;
+        HttpURLConnection c;
+        try {
+            c = open(now, method, params, away == null ? 8000 : 4000);
+        } catch (IOException e) {
+            if (away == null) throw e;
+            String other = now.equals(home) ? away : home;    // (not answering: try the other address)
+            c = open(other, method, params, 8000);
+            base = other;
+        }
         try (InputStream in = c.getInputStream()) {
             ByteArrayOutputStream b = new ByteArrayOutputStream();
             byte[] buf = new byte[65536];
@@ -162,6 +208,22 @@ public final class Subsonic {
         } finally {
             c.disconnect();
         }
+    }
+
+    /** A connection that has answered (HTTP 200), or an IOException. */
+    private HttpURLConnection open(String b, String method, String params, int connectTimeout) throws IOException {
+        URL url = new URL(b + "/rest/" + method + ".view?" + auth() + "&f=json" + params);
+        HttpURLConnection c = (HttpURLConnection) url.openConnection();
+        c.setConnectTimeout(connectTimeout);
+        c.setReadTimeout(60000);
+        try {
+            int code = c.getResponseCode();
+            if (code != 200) throw new IOException("the server answered " + code);
+        } catch (IOException e) {
+            c.disconnect();
+            throw e;
+        }
+        return c;
     }
 
     private static String md5(String s) {

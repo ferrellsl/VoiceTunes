@@ -8,7 +8,13 @@ import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.Player;
+import androidx.media3.datasource.DataSource;
+import androidx.media3.datasource.DataSourceBitmapLoader;
+import androidx.media3.datasource.DefaultDataSource;
+import androidx.media3.datasource.ResolvingDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.session.CacheBitmapLoader;
 import androidx.media3.session.LibraryResult;
 import androidx.media3.session.MediaLibraryService;
 import androidx.media3.session.MediaSession;
@@ -46,13 +52,19 @@ public final class PlaybackService extends MediaLibraryService {
     public void onCreate() {
         super.onCreate();
         music = Music.get(this);
+        // songs and pictures are fetched from whichever server address answers at the time
+        DataSource.Factory net = new ResolvingDataSource.Factory(new DefaultDataSource.Factory(this),
+            spec -> spec.withUri(music.resolve(spec.uri)));
         ExoPlayer player = new ExoPlayer.Builder(this)
+            .setMediaSourceFactory(new DefaultMediaSourceFactory(net))
             .setAudioAttributes(new AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             .setHandleAudioBecomingNoisy(true)           // (pause when headphones come out)
             .setWakeMode(C.WAKE_MODE_NETWORK)            // (keep streaming with the screen off)
             .build();
-        session = new MediaLibrarySession.Builder(this, player, new Library()).build();
+        session = new MediaLibrarySession.Builder(this, player, new Library())
+            .setBitmapLoader(new CacheBitmapLoader(new DataSourceBitmapLoader(work, net)))
+            .build();
     }
 
     @Override

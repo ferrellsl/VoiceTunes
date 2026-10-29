@@ -31,6 +31,7 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.media3.common.MediaItem;
@@ -42,7 +43,10 @@ import androidx.media3.session.SessionToken;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.InputStream;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -299,7 +303,7 @@ public final class MainActivity extends Activity {
         images.execute(() -> {
             android.graphics.Bitmap b = null;
             try {
-                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(uri.toString()).openConnection();
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(music.resolve(uri).toString()).openConnection();
                 c.setConnectTimeout(8000);
                 c.setReadTimeout(15000);
                 try (java.io.InputStream in = c.getInputStream()) {
@@ -516,7 +520,32 @@ public final class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(8), dp(20), 0);
-        EditText url = field(box, "Navidrome address", prefs.getString("server", Music.DEFAULT_SERVER), InputType.TYPE_TEXT_VARIATION_URI);
+        EditText url = field(box, "Navidrome address at home", prefs.getString("server", ""), InputType.TYPE_TEXT_VARIATION_URI);
+        url.setHint("http://192.168.1.20:4533");
+        EditText away = field(box, "Away address (optional; used when the home one doesn't answer)",
+            prefs.getString("away", ""), InputType.TYPE_TEXT_VARIATION_URI);
+        away.setHint("https://music.example.com");
+        certStatus = new TextView(this);
+        certStatus.setPadding(0, dp(4), 0, 0);
+        box.addView(certStatus);
+        LinearLayout certButtons = new LinearLayout(this);
+        Button pickCert = new Button(this);
+        pickCert.setText("Certificate file…");
+        Button forgetCert = new Button(this);
+        forgetCert.setText("Forget it");
+        certButtons.addView(pickCert);
+        certButtons.addView(forgetCert);
+        box.addView(certButtons);
+        showCertStatus();
+        pickCert.setOnClickListener(v -> {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+            startActivityForResult(i, PICK_CERT);
+        });
+        forgetCert.setOnClickListener(v -> {
+            prefs.edit().remove("awayCert").apply();
+            Trust.install(prefs);
+            showCertStatus();
+        });
         EditText user = field(box, "User name", prefs.getString("user", ""), InputType.TYPE_CLASS_TEXT);
         EditText pass = field(box, prefs.getString("token", "").isEmpty() ? "Password" : "Password (leave empty to keep)", "",
             InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
@@ -538,9 +567,11 @@ public final class MainActivity extends Activity {
         refresh.setText("Get the library again now");
         box.addView(refresh);
 
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(box);
         AlertDialog d = new AlertDialog.Builder(this)
             .setTitle("Settings")
-            .setView(box)
+            .setView(scroll)
             .setPositiveButton("Save", null)
             .setNegativeButton("Cancel", null)
             .create();
@@ -550,6 +581,7 @@ public final class MainActivity extends Activity {
             boolean serverChanged = !url.getText().toString().trim().equals(prefs.getString("server", ""))
                 || !user.getText().toString().trim().equals(prefs.getString("user", ""));
             e.putString("server", url.getText().toString().trim());
+            e.putString("away", away.getText().toString().trim());
             e.putString("user", user.getText().toString().trim());
             if (pass.getText().length() > 0) {
                 String[] t = Subsonic.tokenFor(pass.getText().toString());
@@ -564,7 +596,7 @@ public final class MainActivity extends Activity {
             if (screen.isChecked()) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             music.reloadServer();
-            if (music.server == null) { status.setText("Enter your user name and password."); return; }
+            if (music.server == null) { status.setText("Enter the server address, your user name and your password."); return; }
             d.dismiss();
             if (serverChanged) {
                 Subsonic s = music.server;
@@ -580,6 +612,58 @@ public final class MainActivity extends Activity {
             }
         }));
         d.show();
+    }
+
+    // ------------------------------------------------------------------ the away address's certificate
+
+    private static final int PICK_CERT = 2;
+    private static final String NL = System.lineSeparator();
+    private TextView certStatus;
+
+    private void showCertStatus() {
+        if (certStatus == null) return;
+        X509Certificate c = Trust.saved(prefs);
+        certStatus.setText(c == null
+            ? "Away certificate: the phone's usual ones. If your away address uses a self-signed certificate "
+                + "or the reverse proxy's own authority (e.g. Caddy's \"tls internal\"), choose that certificate's file."
+            : "Away certificate: " + c.getSubjectX500Principal().getName() + ", until "
+                + java.text.DateFormat.getDateInstance().format(c.getNotAfter()));
+    }
+
+    @Override
+    protected void onActivityResult(int code, int result, Intent data) {
+        super.onActivityResult(code, result, data);
+        if (code != PICK_CERT || result != RESULT_OK || data == null || data.getData() == null) return;
+        X509Certificate c;
+        try (InputStream in = getContentResolver().openInputStream(data.getData())) {
+            ByteArrayOutputStream b = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            for (int n; (n = in.read(buf)) > 0 && b.size() < 1 << 20; ) b.write(buf, 0, n);
+            c = Trust.parse(b.toByteArray());
+        } catch (Exception e) {
+            new AlertDialog.Builder(this).setTitle("Not a certificate")
+                .setMessage("That file isn't a certificate VoiceTunes can read (PEM .crt/.pem or DER .cer).")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        // (the user checks it's the right one before it's trusted)
+        new AlertDialog.Builder(this)
+            .setTitle("Trust this certificate?")
+            .setMessage(c.getSubjectX500Principal().getName()
+                + NL + NL + "Valid until " + java.text.DateFormat.getDateInstance().format(c.getNotAfter())
+                + NL + NL + "SHA-256 fingerprint:" + NL + Trust.fingerprint(c)
+                + NL + NL + "It will be trusted only for the away address.")
+            .setPositiveButton("Trust it", (x, y) -> {
+                try {
+                    prefs.edit().putString("awayCert", Trust.encode(c)).apply();
+                } catch (Exception ignored) {
+                    return;
+                }
+                Trust.install(prefs);
+                showCertStatus();
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
     }
 
     @Override
