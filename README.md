@@ -21,9 +21,11 @@ are all handled), and it's done on the phone against a saved copy of your librar
 ## Android Auto
 
 VoiceTunes shows up as a media app: Shuffle everything, Playlists, Artists and Albums, plus
-search. Because it isn't from the Play Store, turn on Android Auto's developer settings
+search. Tap Android Auto's microphone, or press the steering-wheel voice button and say "play
+... on VoiceTunes". Because it isn't from the Play Store, turn on Android Auto's developer settings
 (Android Auto settings, tap *Version* ten times, then the menu > Developer settings > *Unknown
-sources*), then add it under *Customize launcher*.
+sources*). Then open the app grid on the car's screen and pick VoiceTunes (*Customize launcher*
+in Android Auto's settings decides which apps the grid shows).
 
 Android Auto refuses to run while any VPN is on (it shows "communication error 21"), so you can't
 reach a home server through a VPN while driving. Use an away address instead (below).
