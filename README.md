@@ -46,6 +46,15 @@ reach a home server through a VPN while driving. Use an away address instead (be
      Subsonic API token (md5 of password + salt).
 4. It downloads your library list and you're ready to go.
 
+### "Speech recognizer error 9"
+
+VoiceTunes doesn't listen itself: it asks the phone's speech recognizer (normally Speech
+Services by Google or the Google app), and error 9 means that recognizer isn't allowed the
+microphone. Some phones and tablets sold without Google services (Chinese-market firmware, for
+one) install those apps with the microphone denied. Allow it under Settings > Apps > Speech
+Services by Google (and Google) > Permissions > Microphone. VoiceTunes tries Google's recognizer
+by itself when the default one refuses, and Settings > Speech recognizer lets you pick one.
+
 ## Away from home
 
 Fill in **Away address** with an HTTPS address that reaches your server from the internet. The
