@@ -3,6 +3,7 @@ package com.ferrellsl.voicetunes;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.SearchManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -90,6 +91,7 @@ public final class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 2);
         }
+        takeSearch(getIntent());
         if (music.server == null) {
             status.setText("Set up your Navidrome server to start.");
             main.post(this::showSettings);
@@ -110,10 +112,43 @@ public final class MainActivity extends Activity {
                     @Override public void onEvents(Player p, Player.Events e) { showNowPlaying(); }
                 });
                 showNowPlaying();
+                playSearch();
             } catch (Exception e) {
                 status.setText("Can't start the player: " + e.getMessage());
             }
         }, MoreExecutors.directExecutor());
+    }
+
+    // ------------------------------------------------------------------ "play X on VoiceTunes"
+
+    /** What an assistant asked for ("play X on VoiceTunes"), until the player is connected. */
+    private String pendingSearch;
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        takeSearch(intent);
+        playSearch();
+    }
+
+    private void takeSearch(Intent intent) {
+        if (intent == null || !android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH.equals(intent.getAction())) return;
+        String q = intent.getStringExtra(SearchManager.QUERY);
+        pendingSearch = q == null ? "" : q;
+        intent.setAction(Intent.ACTION_MAIN);          // (not again when the screen is rebuilt)
+    }
+
+    /** The player service finds and plays it, as for Android Auto's searches. */
+    private void playSearch() {
+        if (pendingSearch == null || player == null || music.server == null) return;
+        String q = pendingSearch;
+        pendingSearch = null;
+        heard.setText(q.isEmpty() ? "" : "“" + q + "”");
+        player.setMediaItem(new MediaItem.Builder()
+            .setRequestMetadata(new MediaItem.RequestMetadata.Builder().setSearchQuery(q).build()).build());
+        player.prepare();
+        player.play();
     }
 
     @Override
