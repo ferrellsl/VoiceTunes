@@ -21,8 +21,14 @@ are all handled), and it's done on the phone against a saved copy of your librar
 ## Android Auto
 
 VoiceTunes shows up as a media app: Shuffle everything, Playlists, Artists and Albums, plus
-search. Tap Android Auto's microphone, or press the steering-wheel voice button and say "play
-... on VoiceTunes". Because it isn't from the Play Store, turn on Android Auto's developer settings
+search. Its playing screen has VoiceTunes' own microphone button (tap it, wait for the beep,
+and say what you want, as on the phone) and a shuffle toggle.
+
+Android Auto's own microphone and the steering-wheel voice button go to Google's assistant
+(Gemini), which only plays music on its partner apps (Spotify, YouTube Music and a few others),
+so "play ... on VoiceTunes" doesn't work there; use VoiceTunes' microphone button instead.
+
+Because it isn't from the Play Store, turn on Android Auto's developer settings
 (Android Auto settings, tap *Version* ten times, then the menu > Developer settings > *Unknown
 sources*). Then open the app grid on the car's screen and pick VoiceTunes (*Customize launcher*
 in Android Auto's settings decides which apps the grid shows).
