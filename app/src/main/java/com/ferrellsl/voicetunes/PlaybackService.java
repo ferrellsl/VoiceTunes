@@ -67,18 +67,33 @@ public final class PlaybackService extends MediaLibraryService {
             .build();
         session = new MediaLibrarySession.Builder(this, player, new Library())
             .setBitmapLoader(new CacheBitmapLoader(new DataSourceBitmapLoader(work, net)))
-            .setCustomLayout(ImmutableList.of(new CommandButton.Builder()
+            .setCustomLayout(buttons(false))
+            .build();
+        voice = new CarVoice(this, music, player, work);
+        player.addListener(new Player.Listener() {
+            @Override public void onShuffleModeEnabledChanged(boolean on) { session.setCustomLayout(buttons(on)); }
+        });
+    }
+
+    /** VoiceTunes' own buttons beside play/pause on Android Auto's playing screen: its microphone
+     *  and a shuffle toggle (its icon shows whether shuffle is on). */
+    private static final SessionCommand LISTEN = new SessionCommand("com.ferrellsl.voicetunes.LISTEN", Bundle.EMPTY);
+    private static final SessionCommand SHUFFLE = new SessionCommand("com.ferrellsl.voicetunes.SHUFFLE", Bundle.EMPTY);
+    private CarVoice voice;
+
+    private static ImmutableList<CommandButton> buttons(boolean shuffleOn) {
+        return ImmutableList.of(
+            new CommandButton.Builder()
                 .setDisplayName("Speak")
                 .setIconResId(R.drawable.ic_mic)
                 .setSessionCommand(LISTEN)
-                .build()))
-            .build();
-        voice = new CarVoice(this, music, player, work);
+                .build(),
+            new CommandButton.Builder()
+                .setDisplayName(shuffleOn ? "Shuffle is on" : "Shuffle is off")
+                .setIconResId(shuffleOn ? R.drawable.ic_shuffle : R.drawable.ic_shuffle_off)
+                .setSessionCommand(SHUFFLE)
+                .build());
     }
-
-    /** VoiceTunes' own microphone button, beside play/pause on Android Auto's playing screen. */
-    private static final SessionCommand LISTEN = new SessionCommand("com.ferrellsl.voicetunes.LISTEN", Bundle.EMPTY);
-    private CarVoice voice;
 
     @Override
     public MediaLibrarySession onGetSession(MediaSession.ControllerInfo controllerInfo) {
@@ -110,7 +125,7 @@ public final class PlaybackService extends MediaLibraryService {
         public MediaSession.ConnectionResult onConnect(MediaSession s, MediaSession.ControllerInfo controller) {
             return new MediaSession.ConnectionResult.AcceptedResultBuilder(s)
                 .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
-                    .buildUpon().add(LISTEN).build())
+                    .buildUpon().add(LISTEN).add(SHUFFLE).build())
                 .build();
         }
 
@@ -119,6 +134,11 @@ public final class PlaybackService extends MediaLibraryService {
                 MediaSession s, MediaSession.ControllerInfo controller, SessionCommand command, Bundle args) {
             if (LISTEN.customAction.equals(command.customAction)) {
                 voice.listen();
+                return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_SUCCESS));
+            }
+            if (SHUFFLE.customAction.equals(command.customAction)) {
+                Player p = s.getPlayer();
+                p.setShuffleModeEnabled(!p.getShuffleModeEnabled());
                 return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_SUCCESS));
             }
             return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED));
