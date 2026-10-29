@@ -1,6 +1,7 @@
 package com.ferrellsl.voicetunes;
 
 import android.Manifest;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -74,10 +75,8 @@ final class CarVoice {
         if (tts.isSpeaking()) tts.stop();
         resumeAfter = player.isPlaying();
         if (resumeAfter) player.pause();
-        if (recognizer == null) {
-            recognizer = SpeechRecognizer.createSpeechRecognizer(context);
-            recognizer.setRecognitionListener(listener);
-        }
+        if (recognizer == null || !java.util.Objects.equals(service, Speech.chosen(music.prefs))) use(Speech.chosen(music.prefs));
+        retried = false;
         beep();
         Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
@@ -85,8 +84,20 @@ final class CarVoice {
         i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
         i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.getPackageName());
         listening = true;
+        request = i;
         // (after the beep, so it isn't heard as the start of the request)
         main.postDelayed(() -> { if (listening) recognizer.startListening(i); }, 250);
+    }
+
+    private ComponentName service;    // (null: the phone's default)
+    private Intent request;
+    private boolean retried;
+
+    private void use(ComponentName s) {
+        if (recognizer != null) recognizer.destroy();
+        service = s;
+        recognizer = Speech.create(context, s);
+        recognizer.setRecognitionListener(listener);
     }
 
     private final RecognitionListener listener = new RecognitionListener() {
@@ -100,6 +111,15 @@ final class CarVoice {
 
         @Override public void onError(int error) {
             if (!listening) return;
+            if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS && !retried) {
+                ComponentName other = Speech.instead(context, service);
+                if (other != null) {           // (this recognizer refused: another, Google's first)
+                    retried = true;
+                    use(other);
+                    recognizer.startListening(request);
+                    return;
+                }
+            }
             listening = false;
             String what;
             switch (error) {

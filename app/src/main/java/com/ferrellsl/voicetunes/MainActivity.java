@@ -379,10 +379,8 @@ public final class MainActivity extends Activity {
         // (the music would drown out what's said)
         resumeAfter = player != null && player.isPlaying();
         if (resumeAfter) player.pause();
-        if (recognizer == null) {
-            recognizer = SpeechRecognizer.createSpeechRecognizer(this);
-            recognizer.setRecognitionListener(listener);
-        }
+        if (recognizer == null) useRecognizer(Speech.chosen(prefs));
+        retried = false;
         Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
         i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag());
@@ -392,7 +390,19 @@ public final class MainActivity extends Activity {
         listening = true;
         setMicListening();
         heard.setText("");
+        listenIntent = i;
         recognizer.startListening(i);
+    }
+
+    private ComponentName recognizerService;    // (null: the phone's default)
+    private Intent listenIntent;
+    private boolean retried;
+
+    private void useRecognizer(ComponentName service) {
+        if (recognizer != null) recognizer.destroy();
+        recognizerService = service;
+        recognizer = Speech.create(this, service);
+        recognizer.setRecognitionListener(listener);
     }
 
     private void stopListening() {
@@ -418,10 +428,23 @@ public final class MainActivity extends Activity {
 
         @Override public void onError(int error) {
             if (!listening) return;
+            if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS && !retried) {
+                // (this recognizer refused: another, Google's first, if there is one)
+                ComponentName other = Speech.instead(MainActivity.this, recognizerService);
+                if (other != null) {
+                    retried = true;
+                    useRecognizer(other);
+                    recognizer.startListening(listenIntent);
+                    return;
+                }
+            }
             listening = false;
             setMicIdle();
             boolean nothing = error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT;
-            heard.setText(nothing ? "Didn't catch that" : "Speech recognizer error " + error);
+            heard.setText(nothing ? "Didn't catch that"
+                : error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS
+                    ? "The speech recognizer isn't allowed the microphone (error 9): allow it in Android's app settings, or pick another one in Settings"
+                    : "Speech recognizer error " + error);
             if (resumeAfter && player != null) player.play();
             resumeAfter = false;
         }
@@ -598,6 +621,10 @@ public final class MainActivity extends Activity {
         screen.setText("Keep the screen on while VoiceTunes is open");
         screen.setChecked(prefs.getBoolean("screenOn", true));
         box.addView(screen);
+        Button speech = new Button(this);
+        speech.setText("Speech recognizer: " + recognizerName(Speech.chosen(prefs)));
+        speech.setOnClickListener(v -> pickRecognizer(speech));
+        box.addView(speech);
         Button refresh = new Button(this);
         refresh.setText("Get the library again now");
         box.addView(refresh);
@@ -647,6 +674,28 @@ public final class MainActivity extends Activity {
             }
         }));
         d.show();
+    }
+
+    private String recognizerName(ComponentName c) {
+        if (c == null) return "the phone's default";
+        for (Speech.Service s : Speech.services(this)) if (s.component.equals(c)) return s.label;
+        return c.getPackageName();
+    }
+
+    private void pickRecognizer(Button shown) {
+        List<Speech.Service> all = Speech.services(this);
+        String[] names = new String[all.size() + 1];
+        names[0] = "The phone's default";
+        for (int k = 0; k < all.size(); k++) names[k + 1] = all.get(k).label;
+        new AlertDialog.Builder(this)
+            .setTitle("Speech recognizer")
+            .setItems(names, (x, k) -> {
+                ComponentName c = k == 0 ? null : all.get(k - 1).component;
+                prefs.edit().putString("recognizer", c == null ? "" : c.flattenToString()).apply();
+                if (recognizer != null) { recognizer.destroy(); recognizer = null; }
+                shown.setText("Speech recognizer: " + recognizerName(c));
+            })
+            .show();
     }
 
     // ------------------------------------------------------------------ the away address's certificate
