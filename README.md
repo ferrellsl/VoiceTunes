@@ -18,6 +18,21 @@ microphone, say what you want, and it plays from your server.
 Matching is fuzzy (spoken numbers, "the", apostrophes, remaster tags and small misrecognitions
 are all handled), and it's done on the phone against a saved copy of your library, so it's quick.
 
+## Hands-free
+
+For when your hands are full (walking dogs, carrying groceries): tap the ear button at the top
+of the app to turn hands-free on. With the phone in your pocket, say **"Hey VoiceTunes"**,
+wait for the beep, then say what to play, or "pause", "play", "next", "back".
+
+- The wake words are recognized offline on the phone with [Vosk](https://alphacephei.com/vosk/)
+  (its small English model, about 40 MB, is downloaded the first time you turn hands-free on).
+  Nothing leaves the phone until after the beep.
+- It listens through the phone's own microphone. An earbud microphone would switch Bluetooth
+  into its phone-call mode and the music would drop to call quality.
+- A notification shows while it's on, with a Stop button. It uses some battery while it's on,
+  so turn it off when you don't need it.
+- Gemini can't do this for VoiceTunes: it only controls its partner apps, even for "next".
+
 ## Android Auto
 
 VoiceTunes shows up as a media app: Shuffle everything, Playlists, Artists and Albums, plus
