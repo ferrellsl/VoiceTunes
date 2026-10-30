@@ -20,8 +20,10 @@ android {
         applicationId = "com.ferrellsl.voicetunes"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.1.1"
+        versionCode = 4
+        versionName = "1.2"
+        // phones and tablets (Vosk's speech library is ~10 MB per architecture)
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
     signingConfigs {
         if (keystoreFile.exists()) {
@@ -48,4 +50,6 @@ android {
 dependencies {
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-session:1.5.1")
+    // hands-free wake words, recognized offline (the model is downloaded when it's first turned on)
+    implementation("com.alphacephei:vosk-android:0.3.75")
 }

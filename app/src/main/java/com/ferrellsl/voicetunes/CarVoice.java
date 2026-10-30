@@ -61,15 +61,15 @@ final class CarVoice {
             return;
         }
         if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            say("Open VoiceTunes on the phone once and allow the microphone.", null);
+            say("Open VoiceTunes on the phone once and allow the microphone.", this::finished);
             return;
         }
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            say("Speech recognition isn't available on this phone.", null);
+            say("Speech recognition isn't available on this phone.", this::finished);
             return;
         }
         if (music.library() == null) {
-            say("The library isn't loaded yet.", null);
+            say("The library isn't loaded yet.", this::finished);
             return;
         }
         if (tts.isSpeaking()) tts.stop();
@@ -151,8 +151,9 @@ final class CarVoice {
                 case PREVIOUS: player.seekToPrevious(); player.play(); break;
                 case PAUSE: case STOP: break;                  // (paused already)
                 case RESUME: player.play(); break;
-                default: done(); break;
+                default: break;
             }
+            done();
             return;
         }
         work.execute(() -> {
@@ -173,6 +174,7 @@ final class CarVoice {
                         player.setMediaItems(music.playable(queue), 0, 0);
                         player.prepare();
                         player.play();
+                        finished();
                     });
                 });
             } catch (Exception e) {
@@ -186,6 +188,17 @@ final class CarVoice {
         listening = false;
         if (resumeAfter) player.play();
         resumeAfter = false;
+        finished();
+    }
+
+    private Runnable onFinished;
+
+    /** Called (on the main thread) each time a request has been dealt with, so the hands-free
+     *  listener can start waiting for its wake word again. */
+    void setOnFinished(Runnable r) { onFinished = r; }
+
+    private void finished() {
+        if (onFinished != null) onFinished.run();
     }
 
     private void beep() {

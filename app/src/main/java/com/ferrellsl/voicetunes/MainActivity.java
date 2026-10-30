@@ -74,7 +74,7 @@ public final class MainActivity extends Activity {
     private TextToSpeech tts;
     private boolean ttsReady, listening, resumeAfter;
 
-    private Button mic, playPause, shuffle;
+    private Button mic, playPause, shuffle, handsFree;
     private TextView status, heard, nowTitle, nowArtist;
     private ImageView art;
 
@@ -185,6 +185,11 @@ public final class MainActivity extends Activity {
         TextView title = text("VoiceTunes", 22, Color.WHITE);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        // hands-free ("Hey VoiceTunes"): bright when it's on
+        handsFree = flat("👂");
+        handsFree.setAlpha(HandsFree.running ? 1f : 0.35f);
+        handsFree.setOnClickListener(v -> toggleHandsFree());
+        top.addView(handsFree);
         Button settings = flat("⚙");
         settings.setOnClickListener(v -> showSettings());
         top.addView(settings);
@@ -698,6 +703,61 @@ public final class MainActivity extends Activity {
             .show();
     }
 
+    // ------------------------------------------------------------------ hands-free
+
+    private void toggleHandsFree() {
+        if (HandsFree.running) {
+            stopService(new Intent(this, HandsFree.class));
+            HandsFree.running = false;
+            handsFree.setAlpha(0.35f);
+            say("Hands-free off.");
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] { Manifest.permission.RECORD_AUDIO }, 3);
+            return;
+        }
+        if (!HandsFree.haveModel(this)) {
+            new AlertDialog.Builder(this)
+                .setTitle("Hands-free")
+                .setMessage("With hands-free on, say \"Hey VoiceTunes\" with the phone in your pocket, wait for "
+                    + "the beep, then say what to play or \"pause\", \"next\"... It listens through the phone's "
+                    + "microphone and uses some battery while it's on."
+                    + NL + NL + "It needs its wake-word model first: a one-time download of about 40 MB.")
+                .setPositiveButton("Download", (x, y) -> downloadModel())
+                .setNegativeButton("Cancel", null)
+                .show();
+            return;
+        }
+        startHandsFree();
+    }
+
+    private void downloadModel() {
+        status.setText("Downloading the hands-free model…");
+        work.execute(() -> {
+            try {
+                HandsFree.downloadModel(this, p -> main.post(() -> status.setText("Downloading the hands-free model… " + p + "%")));
+                main.post(() -> { status.setText(""); startHandsFree(); });
+            } catch (Exception e) {
+                main.post(() -> status.setText("Couldn't download the hands-free model: " + e.getMessage()));
+            }
+        });
+    }
+
+    private void startHandsFree() {
+        if (music.server == null) { status.setText("Set up your Navidrome server first."); return; }
+        startForegroundService(new Intent(this, HandsFree.class));
+        HandsFree.running = true;
+        handsFree.setAlpha(1f);
+        say("Hands-free on. Say hey VoiceTunes.");
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (handsFree != null) handsFree.setAlpha(HandsFree.running ? 1f : 0.35f);
+    }
+
     // ------------------------------------------------------------------ the away address's certificate
 
     private static final int PICK_CERT = 2;
@@ -753,6 +813,7 @@ public final class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
         if (code == 1 && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) onMic();
+        if (code == 3 && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) toggleHandsFree();
     }
 
     // ------------------------------------------------------------------ small helpers
