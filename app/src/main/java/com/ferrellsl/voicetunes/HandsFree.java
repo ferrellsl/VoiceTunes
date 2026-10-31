@@ -57,7 +57,20 @@ public final class HandsFree extends Service {
     private static final String CHANNEL = "handsfree";
     private static final int NOTIFICATION = 2;
     // (Vosk listens only for these; anything else comes out as [unk])
-    private static final String GRAMMAR = "[\"hey voice tunes\", \"voice tunes\", \"[unk]\"]";
+    /** The commands that can follow the wake words in one breath, with no beep in between. */
+    private static final String[] ONE_BREATH = {
+        "what's playing", "what is playing", "what's this", "what song is this", "who is this",
+        "next", "next song", "skip", "skip this", "back", "go back", "previous", "pause", "stop",
+        "play", "resume", "shuffle on", "shuffle off", "turn shuffle on", "turn shuffle off",
+        "turn looping on", "turn looping off", "shuffle everything",
+    };
+    private static final String GRAMMAR = grammar();    // (after ONE_BREATH, which it reads)
+
+    private static String grammar() {
+        StringBuilder g = new StringBuilder("[\"hey voice tunes\", \"voice tunes\", \"[unk]\"");
+        for (String c : ONE_BREATH) g.append(", \"hey voice tunes ").append(c).append("\", \"voice tunes ").append(c).append('"');
+        return g.append(']').toString();
+    }
 
     /** Whether it's running, for the app's ear button. */
     static volatile boolean running;
@@ -216,9 +229,13 @@ public final class HandsFree extends Service {
         } catch (Exception e) {
             return;
         }
-        if (!text.contains("voice tunes") || voice == null) return;
+        int at = text.indexOf("voice tunes");
+        if (at < 0 || voice == null) return;
+        String rest = text.substring(at + "voice tunes".length()).trim();
         stopWake();
-        main.post(voice::listen);
+        // a command said in one breath is done at once; anything else gets the beep
+        if (rest.isEmpty() || rest.contains("[unk]")) main.post(voice::listen);
+        else main.post(() -> voice.command(rest));
     }
 
     @Override

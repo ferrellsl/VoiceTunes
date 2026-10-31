@@ -53,6 +53,13 @@ final class CarVoice {
         tts.shutdown();
     }
 
+    /** A command already heard ("Hey VoiceTunes, what's playing"), on the main thread. */
+    void command(String said) {
+        resumeAfter = player.isPlaying();
+        if (resumeAfter) player.pause();
+        act(java.util.Collections.singletonList(said));
+    }
+
     /** The button was tapped (on the main thread). */
     void listen() {
         if (listening) {                                   // (a second tap: stop listening)
