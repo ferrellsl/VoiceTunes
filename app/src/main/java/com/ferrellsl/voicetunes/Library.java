@@ -20,19 +20,20 @@ import java.util.List;
 public final class Library {
 
     public final List<Matcher.Song> songs;
-    public final List<Matcher.Item> albums, artists, playlists;
+    public final List<Matcher.Item> albums, artists, playlists, genres;
     public final long fetched;          // System.currentTimeMillis() when fetched
     public final Matcher matcher;
 
     private Library(List<Matcher.Song> songs, List<Matcher.Item> albums, List<Matcher.Item> artists,
-                    List<Matcher.Item> playlists, long fetched) {
+                    List<Matcher.Item> playlists, List<Matcher.Item> genres, long fetched) {
         this.songs = songs; this.albums = albums; this.artists = artists; this.playlists = playlists;
+        this.genres = genres;
         this.fetched = fetched;
-        matcher = new Matcher(songs, albums, artists, playlists);
+        matcher = new Matcher(songs, albums, artists, playlists, genres);
     }
 
-    /** (2: songs carry their artwork id) */
-    private static final int VERSION = 2;
+    /** (2: songs carry their artwork id; 3: genres) */
+    private static final int VERSION = 3;
     private int version = VERSION;
 
     public boolean stale() { return version < VERSION || System.currentTimeMillis() - fetched > 24L * 3600 * 1000; }
@@ -56,7 +57,7 @@ public final class Library {
 
     public static Library fetch(Subsonic server) throws IOException {
         return new Library(server.songs(), server.albums(), server.artists(), server.playlists(),
-            System.currentTimeMillis());
+            server.genres(), System.currentTimeMillis());
     }
 
     // ------------------------------------------------------------------ the copy on the phone
@@ -72,6 +73,7 @@ public final class Library {
             o.put("albums", items(albums));
             o.put("artists", items(artists));
             o.put("playlists", items(playlists));
+            o.put("genres", items(genres));
             File tmp = new File(f.getPath() + ".tmp");
             try (FileOutputStream out = new FileOutputStream(tmp)) {
                 out.write(o.toString().getBytes(StandardCharsets.UTF_8));
@@ -94,7 +96,9 @@ public final class Library {
             }
             Library lib = new Library(songs, items(o.getJSONArray("albums"), Matcher.Kind.ALBUM),
                 items(o.getJSONArray("artists"), Matcher.Kind.ARTIST),
-                items(o.getJSONArray("playlists"), Matcher.Kind.PLAYLIST), o.getLong("fetched"));
+                items(o.getJSONArray("playlists"), Matcher.Kind.PLAYLIST),
+                o.has("genres") ? items(o.getJSONArray("genres"), Matcher.Kind.GENRE) : new ArrayList<>(),
+                o.getLong("fetched"));
             lib.version = o.optInt("version", 1);
             return lib;
         } catch (Exception e) {

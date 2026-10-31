@@ -18,9 +18,12 @@ import java.util.Map;
  */
 public final class Matcher {
 
-    public enum Kind { SONG, ALBUM, ARTIST, PLAYLIST }
+    public enum Kind { SONG, ALBUM, ARTIST, PLAYLIST, GENRE }
 
-    public enum Control { NONE, NEXT, PREVIOUS, PAUSE, RESUME, STOP, REFRESH }
+    public enum Control {
+        NONE, NEXT, PREVIOUS, PAUSE, RESUME, STOP, REFRESH,
+        WHATS_PLAYING, SHUFFLE_ON, SHUFFLE_OFF, LOOP_ON, LOOP_OFF, SHUFFLE_ALL
+    }
 
     public static final class Song {
         public final String id, title, artist, album, albumId;
@@ -57,6 +60,7 @@ public final class Matcher {
         public String byArtist;      // "... by <artist>"
         String byWord = "by";        // ("by" or "from", to put the phrase back together)
         public boolean shuffle;
+        public String genre;         // "<genre> music"
         @Override public String toString() {
             return control != Control.NONE ? control.toString()
                 : (shuffle ? "shuffle " : "") + (kind == null ? "any" : kind) + " '" + text + "'"
@@ -79,6 +83,7 @@ public final class Matcher {
                 case SONG: return song.title + " by " + song.artist;
                 case PLAYLIST: return "the playlist " + item.name;
                 case ALBUM: return "the album " + item.name + (item.artist != null && !item.artist.isEmpty() ? " by " + item.artist : "");
+                case GENRE: return item.name + " music";
                 default: return item.name;
             }
         }
@@ -89,17 +94,23 @@ public final class Matcher {
     public static final double ACCEPT = 0.62;
 
     private final List<Song> songs;
-    private final List<Item> albums, artists, playlists;
+    private final List<Item> albums, artists, playlists, genres;
 
     public Matcher(List<Song> songs, List<Item> albums, List<Item> artists, List<Item> playlists) {
+        this(songs, albums, artists, playlists, new ArrayList<>());
+    }
+
+    public Matcher(List<Song> songs, List<Item> albums, List<Item> artists, List<Item> playlists, List<Item> genres) {
         this.songs = songs; this.albums = albums; this.artists = artists; this.playlists = playlists;
+        this.genres = genres;
     }
 
     // ------------------------------------------------------------------ what was said
 
     private static final String[][] CONTROLS = {
         {"next", "NEXT"}, {"next song", "NEXT"}, {"skip", "NEXT"}, {"skip it", "NEXT"}, {"skip this", "NEXT"},
-        {"skip song", "NEXT"}, {"skip this song", "NEXT"}, {"next track", "NEXT"},
+        {"skip song", "NEXT"}, {"skip this song", "NEXT"}, {"next track", "NEXT"}, {"play next", "NEXT"},
+        {"play the next song", "NEXT"}, {"play the next track", "NEXT"},
         {"previous", "PREVIOUS"}, {"previous song", "PREVIOUS"}, {"go back", "PREVIOUS"}, {"back", "PREVIOUS"},
         {"last song", "PREVIOUS"}, {"play the last song", "PREVIOUS"}, {"previous track", "PREVIOUS"},
         {"pause", "PAUSE"}, {"pause the music", "PAUSE"}, {"pause music", "PAUSE"},
@@ -107,11 +118,36 @@ public final class Matcher {
         {"resume", "RESUME"}, {"continue", "RESUME"}, {"play", "RESUME"}, {"unpause", "RESUME"},
         {"resume music", "RESUME"}, {"keep playing", "RESUME"},
         {"refresh", "REFRESH"}, {"refresh library", "REFRESH"}, {"update library", "REFRESH"},
+        // (the My Media for Alexa commands, as people used to it say them)
+        {"what's playing", "WHATS_PLAYING"}, {"what is playing", "WHATS_PLAYING"}, {"what's this track", "WHATS_PLAYING"},
+        {"what is this track", "WHATS_PLAYING"}, {"what's this song", "WHATS_PLAYING"}, {"what is this song", "WHATS_PLAYING"},
+        {"what song is this", "WHATS_PLAYING"}, {"what track is this", "WHATS_PLAYING"}, {"what song is playing", "WHATS_PLAYING"},
+        {"what's this", "WHATS_PLAYING"}, {"what is this", "WHATS_PLAYING"}, {"who is this", "WHATS_PLAYING"},
+        {"who's this", "WHATS_PLAYING"}, {"who is singing", "WHATS_PLAYING"}, {"who's singing", "WHATS_PLAYING"},
+        {"who sings this", "WHATS_PLAYING"}, {"what am i listening to", "WHATS_PLAYING"}, {"name this song", "WHATS_PLAYING"},
+        {"turn shuffle on", "SHUFFLE_ON"}, {"turn on shuffle", "SHUFFLE_ON"}, {"shuffle on", "SHUFFLE_ON"},
+        {"turn shuffle off", "SHUFFLE_OFF"}, {"turn off shuffle", "SHUFFLE_OFF"}, {"shuffle off", "SHUFFLE_OFF"},
+        {"turn looping on", "LOOP_ON"}, {"turn on looping", "LOOP_ON"}, {"looping on", "LOOP_ON"}, {"loop on", "LOOP_ON"},
+        {"turn repeat on", "LOOP_ON"}, {"turn on repeat", "LOOP_ON"}, {"repeat on", "LOOP_ON"},
+        {"turn looping off", "LOOP_OFF"}, {"turn off looping", "LOOP_OFF"}, {"looping off", "LOOP_OFF"}, {"loop off", "LOOP_OFF"},
+        {"turn repeat off", "LOOP_OFF"}, {"turn off repeat", "LOOP_OFF"}, {"repeat off", "LOOP_OFF"},
+        {"shuffle everything", "SHUFFLE_ALL"}, {"shuffle all", "SHUFFLE_ALL"}, {"shuffle my music", "SHUFFLE_ALL"},
+        {"shuffle my library", "SHUFFLE_ALL"}, {"shuffle all my music", "SHUFFLE_ALL"}, {"play everything", "SHUFFLE_ALL"},
+        {"play my music", "SHUFFLE_ALL"}, {"play all my music", "SHUFFLE_ALL"}, {"play music", "SHUFFLE_ALL"},
+        {"play some music", "SHUFFLE_ALL"},
     };
+
+    /** "(Alexa,) ask My Media (to) ...": the habit of years, and the app's own name the same way. */
+    private static final java.util.regex.Pattern ASK = java.util.regex.Pattern.compile(
+        "^(hey |ok |okay )?(alexa,? )?(ask|tell) (my ?media|voice ?tunes)( to)?\\s+");
+    private static final java.util.regex.Pattern ON_APP = java.util.regex.Pattern.compile(
+        "\\s+(on|from|with) (my ?media|voice ?tunes)$");
 
     public static Request parse(String spoken) {
         Request r = new Request();
         String s = spoken.trim().toLowerCase(Locale.US).replaceAll("[.!?,]+$", "").trim();
+        s = ASK.matcher(s).replaceFirst("");
+        s = ON_APP.matcher(s).replaceFirst("");
         String plain = normalize(s);
         for (String[] c : CONTROLS) {
             if (plain.equals(normalize(c[0]))) {
@@ -147,8 +183,12 @@ public final class Matcher {
             r.kind = Kind.ARTIST; s = m.group(3);
         } else if ((m = java.util.regex.Pattern.compile("^(songs|music|anything|something|stuff|tracks|hits) (by|from) (.+)$").matcher(s)).matches()) {
             r.kind = Kind.ARTIST; s = m.group(3);
-        } else if ((m = java.util.regex.Pattern.compile("^(the )?song (called |named )?(.+)$").matcher(s)).matches()) {
-            r.kind = Kind.SONG; s = m.group(3);
+        } else if ((m = java.util.regex.Pattern.compile("^(the )?(song|track) (called |named )?(.+)$").matcher(s)).matches()) {
+            r.kind = Kind.SONG; s = m.group(4);
+        } else if ((m = java.util.regex.Pattern.compile("^(.+?) the album$").matcher(s)).matches()) {
+            r.kind = Kind.ALBUM; s = m.group(1);
+        } else if ((m = java.util.regex.Pattern.compile("^(.+?) music$").matcher(s)).matches()) {
+            r.genre = m.group(1);          // ("rock music": a genre if there is one, else a name)
         }
         if ((r.kind == null || r.kind == Kind.SONG || r.kind == Kind.ALBUM)
                 && (m = java.util.regex.Pattern.compile("^(.+?) (by|from) (.+)$").matcher(s)).matches()) {
@@ -166,6 +206,10 @@ public final class Matcher {
     /** The best match for one of the recognizer's alternatives, or null. */
     public Result find(Request r) {
         if (r.control != Control.NONE || r.text.isEmpty()) return null;
+        if (r.genre != null) {
+            Result g = best(Kind.GENRE, genres, normalize(r.genre), null, true);
+            if (g != null && g.score >= ACCEPT) return g;
+        }
         String q = normalize(stripExtras(r.text));
         if (q.isEmpty()) return null;
         String by = r.byArtist == null ? null : normalize(r.byArtist);

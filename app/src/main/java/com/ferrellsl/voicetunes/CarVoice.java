@@ -144,6 +144,16 @@ final class CarVoice {
 
     private void act(List<String> alternatives) {
         Matcher.Request q = Matcher.parse(alternatives.get(0));
+        // these say something, then what was playing carries on
+        switch (q.control) {
+            case WHATS_PLAYING: tell(Music.nowPlaying(player), this::done); return;
+            case SHUFFLE_ON: player.setShuffleModeEnabled(true); say("Shuffle on.", this::done); return;
+            case SHUFFLE_OFF: player.setShuffleModeEnabled(false); say("Shuffle off.", this::done); return;
+            case LOOP_ON: player.setRepeatMode(Player.REPEAT_MODE_ALL); say("Looping on.", this::done); return;
+            case LOOP_OFF: player.setRepeatMode(Player.REPEAT_MODE_OFF); say("Looping off.", this::done); return;
+            case SHUFFLE_ALL: shuffleAll(); return;
+            default: break;
+        }
         if (q.control != Matcher.Control.NONE) {
             resumeAfter = false;
             switch (q.control) {
@@ -183,6 +193,23 @@ final class CarVoice {
         });
     }
 
+    private void shuffleAll() {
+        resumeAfter = false;
+        work.execute(() -> {
+            List<Matcher.Song> queue = music.shuffleAll(500);
+            main.post(() -> {
+                if (queue.isEmpty()) { say("The library isn't loaded yet.", this::done); return; }
+                say("Shuffling everything.", () -> {
+                    player.setShuffleModeEnabled(false);
+                    player.setMediaItems(music.playable(queue), 0, 0);
+                    player.prepare();
+                    player.play();
+                    finished();
+                });
+            });
+        });
+    }
+
     /** Back to what was playing before the button was tapped. */
     private void done() {
         listening = false;
@@ -213,7 +240,13 @@ final class CarVoice {
 
     /** Says something (when speaking is on), then runs `after` on the main thread. */
     private void say(String s, Runnable after) {
-        if (!music.prefs.getBoolean("speak", true) || !ttsReady) {
+        if (music.prefs.getBoolean("speak", true)) tell(s, after);
+        else if (after != null) after.run();
+    }
+
+    /** Says something even with "Say what's going to play" off (an answer to a question). */
+    private void tell(String s, Runnable after) {
+        if (!ttsReady) {
             if (after != null) after.run();
             return;
         }

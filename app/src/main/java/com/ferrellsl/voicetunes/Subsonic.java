@@ -137,6 +137,21 @@ public final class Subsonic {
         }
     }
 
+    public List<Matcher.Item> genres() throws IOException {
+        JSONArray a = array(call("getGenres", "").optJSONObject("genres"), "genre");
+        List<Matcher.Item> out = new ArrayList<>();
+        for (int i = 0; i < a.length(); i++) {
+            JSONObject g = a.optJSONObject(i);
+            String name = g.optString("value");
+            if (!name.isEmpty()) out.add(new Matcher.Item(Matcher.Kind.GENRE, name, name, null, g.optInt("songCount")));
+        }
+        return out;
+    }
+
+    public List<Matcher.Song> genreSongs(String genre) throws IOException {
+        return songs(array(call("getSongsByGenre", "&count=500&genre=" + Uri.encode(genre)).optJSONObject("songsByGenre"), "song"));
+    }
+
     public List<Matcher.Song> playlistSongs(String id) throws IOException {
         return songs(array(call("getPlaylist", "&id=" + Uri.encode(id)).optJSONObject("playlist"), "entry"));
     }

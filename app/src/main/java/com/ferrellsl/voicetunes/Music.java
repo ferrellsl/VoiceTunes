@@ -137,11 +137,21 @@ public final class Music {
                 break;
             case ARTIST:
                 return library().songsBy(f.item.name);
+            case GENRE:
+                q = server.genreSongs(f.item.name);
+                break;
             default:
                 return songThenAlbum(f.song);
         }
         if (f.shuffle) Collections.shuffle(q);
         return q;
+    }
+
+    /** What to say for "what's playing". */
+    public static String nowPlaying(androidx.media3.common.Player p) {
+        MediaMetadata m = p.getMediaMetadata();
+        if (m.title == null) return "Nothing is playing.";
+        return m.artist == null ? m.title.toString() : m.title + " by " + m.artist;
     }
 
     public List<Matcher.Song> songThenAlbum(Matcher.Song song) {

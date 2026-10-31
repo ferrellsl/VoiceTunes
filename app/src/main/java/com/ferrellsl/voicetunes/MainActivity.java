@@ -516,7 +516,19 @@ public final class MainActivity extends Activity {
         boolean wasPlaying = resumeAfter;
         resumeAfter = false;
         if (player == null) return;
+        Runnable carryOn = () -> { if (wasPlaying && player != null) player.play(); };
         switch (c) {
+            case WHATS_PLAYING: tellThen(Music.nowPlaying(player), carryOn); break;
+            case SHUFFLE_ON: player.setShuffleModeEnabled(true); speakThen("Shuffle on.", carryOn); break;
+            case SHUFFLE_OFF: player.setShuffleModeEnabled(false); speakThen("Shuffle off.", carryOn); break;
+            case LOOP_ON: player.setRepeatMode(Player.REPEAT_MODE_ALL); speakThen("Looping on.", carryOn); break;
+            case LOOP_OFF: player.setRepeatMode(Player.REPEAT_MODE_OFF); speakThen("Looping off.", carryOn); break;
+            case SHUFFLE_ALL:
+                work.execute(() -> {
+                    List<Matcher.Song> queue = music.shuffleAll(500);
+                    main.post(() -> speakThen("Shuffling everything.", () -> play(queue)));
+                });
+                break;
             case NEXT: player.seekToNextMediaItem(); player.play(); break;
             case PREVIOUS: player.seekToPrevious(); player.play(); break;
             case PAUSE: case STOP: player.pause(); break;
@@ -535,8 +547,15 @@ public final class MainActivity extends Activity {
 
     /** Says something (when speaking is on), then runs `after` once it's said. */
     private void speakThen(String s, Runnable after) {
+        if (prefs.getBoolean("speak", true)) { tellThen(s, after); return; }
         status.setText(s);
-        if (!prefs.getBoolean("speak", true) || !ttsReady) {
+        if (after != null) after.run();
+    }
+
+    /** Says something even with "Say what's going to play" off (an answer to a question). */
+    private void tellThen(String s, Runnable after) {
+        status.setText(s);
+        if (!ttsReady) {
             if (after != null) after.run();
             return;
         }
