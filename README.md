@@ -14,6 +14,12 @@ microphone, say what you want, and it plays from your server.
 - "play the playlist Road Trip", "play Road Trip playlist"
 - "play the album Rumours", "play Fleetwood Mac" (an artist: all their songs, shuffled)
 - "shuffle Eagles", "next", "back", "pause", "resume", "refresh" (fetch the library again)
+- "what's playing", "what's this track", "who is this" (it says the title and artist, and the music carries on)
+- "turn shuffle on/off", "turn looping on/off", "shuffle everything"
+- "play some rock music", "shuffle country music" (by the genre tags in your files)
+
+The commands follow My Media for Alexa's, so what you're used to saying works, and a leading
+"ask My Media to ..." is ignored if habit gets the better of you.
 
 Matching is fuzzy (spoken numbers, "the", apostrophes, remaster tags and small misrecognitions
 are all handled), and it's done on the phone against a saved copy of your library, so it's quick.
@@ -23,6 +29,8 @@ are all handled), and it's done on the phone against a saved copy of your librar
 For when your hands are full (walking dogs, carrying groceries): tap the ear button at the top
 of the app to turn hands-free on. With the phone in your pocket, say **"Hey VoiceTunes"**,
 wait for the beep, then say what to play, or "pause", "play", "next", "back".
+Short commands work in one breath, with no beep: "Hey VoiceTunes, what's playing", "Hey
+VoiceTunes, next", "Hey VoiceTunes, pause".
 
 - The wake words are recognized offline on the phone with [Vosk](https://alphacephei.com/vosk/)
   (its small English model, about 40 MB, is downloaded the first time you turn hands-free on).
